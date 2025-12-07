@@ -110,6 +110,9 @@ export class DiscordIpcHandler {
         case 'list_channels':
           return await this.listChannels(params);
 
+        case 'read_channel_history':
+          return await this.readChannelHistory(params);
+
         default:
           return { success: false, error: `Unknown command: ${command}` };
       }
@@ -235,6 +238,34 @@ export class DiscordIpcHandler {
     return {
       success: true,
       channels
+    };
+  }
+
+  async readChannelHistory(params) {
+    const { channelId, limit = 20 } = params;
+
+    const channel = await this.client.channels.fetch(channelId);
+    if (!channel) {
+      return { success: false, error: 'Channel not found' };
+    }
+
+    // Fetch messages
+    const messages = await channel.messages.fetch({ limit: Math.min(limit, 100) });
+
+    // Convert to array and reverse to get chronological order (oldest first)
+    const messageList = [...messages.values()].reverse().map(m => ({
+      id: m.id,
+      author: m.author.bot ? `${m.author.username} [BOT]` : m.author.username,
+      content: m.content || '(no text content)',
+      timestamp: m.createdAt.toISOString(),
+      attachments: m.attachments.size > 0 ? m.attachments.map(a => a.url) : [],
+    }));
+
+    return {
+      success: true,
+      channelId: channel.id,
+      channelName: channel.name,
+      messages: messageList,
     };
   }
 }

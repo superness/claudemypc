@@ -33,6 +33,17 @@ export const config = {
     id: instanceId,
     name: process.env.INSTANCE_NAME || instanceId,
     emoji: process.env.INSTANCE_EMOJI || '🖥️',
+    // Claim emoji - used to indicate this instance is handling a message
+    // Each instance should have a unique claim emoji to identify who's working on it
+    claimEmoji: process.env.CLAIM_EMOJI || '⚡',
+  },
+  // Multi-instance coordination
+  multiInstance: {
+    // Whether to coordinate with other instances (disable to always respond)
+    enabled: process.env.MULTI_INSTANCE !== 'false',
+    // Random delay range (ms) before claiming - helps distribute load
+    claimDelayMin: parseInt(process.env.CLAIM_DELAY_MIN || '100', 10),
+    claimDelayMax: parseInt(process.env.CLAIM_DELAY_MAX || '500', 10),
   },
   // Channel name to project directory mapping
   // Can be extended via bot commands

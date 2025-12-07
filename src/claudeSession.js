@@ -37,6 +37,9 @@ DISCORD:
 - create_thread: Create a thread in the current channel for focused work
 - list_channels: See all channels and their working directories
 
+BOT MANAGEMENT:
+- restart_bot: Restart the bot to apply code changes. ALWAYS use this instead of running npm start directly. It sends your message to Discord BEFORE restarting so the user knows what happened.
+
 CONTEXT/KNOWLEDGE (IMPORTANT!):
 - update_context: Save important findings, decisions, tasks, notes to persistent memory
 - get_context: Review what has been learned and decided in this channel/thread
@@ -143,7 +146,8 @@ export class ClaudeSession extends EventEmitter {
     // Use stream-json for real-time streaming output (requires --verbose with --print, --include-partial-messages for actual text streaming)
     const cmd = `cat "${tempFile}" | ${config.claude.cliPath} --print --verbose --output-format stream-json --include-partial-messages --mcp-config "${MCP_CONFIG_PATH}" --dangerously-skip-permissions --allowedTools 'mcp__discordmypc__*'`;
 
-    this.process = spawn('bash', ['-c', cmd], {
+    // Use absolute path to bash to avoid PATH issues
+    this.process = spawn('/usr/bin/bash', ['-c', cmd], {
       cwd: this.workingDir,
       env: {
         ...process.env,
@@ -153,6 +157,7 @@ export class ClaudeSession extends EventEmitter {
         THREAD_ID: this.threadId || '',
         GUILD_ID: config.discord.guildId || '',
         CONTEXT_DIR: join(config.paths.root, 'context'),
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
       },
       timeout: 600000, // 10 minute timeout
     });
@@ -160,14 +165,21 @@ export class ClaudeSession extends EventEmitter {
     let fullOutput = '';
     let finalText = '';
     let stderr = '';
+    let lineBuffer = '';  // Buffer for incomplete JSON lines
 
     this.process.stdout.on('data', (data) => {
       const chunk = data.toString();
       fullOutput += chunk;
 
-      // Parse streaming JSON lines
-      const lines = chunk.split('\n').filter(l => l.trim());
+      // Add chunk to buffer and split by newlines
+      lineBuffer += chunk;
+      const lines = lineBuffer.split('\n');
+
+      // Keep the last incomplete line in the buffer
+      lineBuffer = lines.pop() || '';
+
       for (const line of lines) {
+        if (!line.trim()) continue;
         try {
           const event = JSON.parse(line);
 
@@ -226,10 +238,43 @@ export class ClaudeSession extends EventEmitter {
       // Clean up temp file
       try { unlinkSync(tempFile); } catch (e) {}
 
+      // Try to parse any remaining buffered line
+      if (lineBuffer.trim()) {
+        try {
+          const event = JSON.parse(lineBuffer);
+          if (event.type === 'result' && event.result) {
+            finalText = event.result;
+          }
+        } catch (e) {
+          // Ignore parse errors on close
+        }
+      }
+
+      // If still no finalText, try to extract from fullOutput
+      if (!finalText && fullOutput) {
+        // Look for the result event in the full output
+        const resultMatch = fullOutput.match(/"type":"result"[^}]*"result":"([^"]+)"/);
+        if (resultMatch) {
+          finalText = resultMatch[1];
+        } else {
+          // Try to parse each line again
+          const outputLines = fullOutput.split('\n');
+          for (const line of outputLines) {
+            try {
+              const event = JSON.parse(line);
+              if (event.type === 'result' && event.result) {
+                finalText = event.result;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
       if (code === 0 || finalText) {
         resolve(finalText.trim() || '(No output)');
       } else if (fullOutput) {
-        // Try to extract text from full output if finalText wasn't captured
+        // Last resort: return raw output
         resolve(fullOutput.trim());
       } else {
         reject(new Error(stderr || `Claude exited with code ${code}`));

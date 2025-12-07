@@ -11,9 +11,10 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, unlinkSync } from 'fs';
 import { join, basename, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 // Get config from environment
 const WORKING_DIR = process.env.WORKING_DIR || '/mnt/c/github';
@@ -107,9 +108,13 @@ async function sendDiscordCommand(command, params) {
 // Execute shell command
 function runShell(command, cwd) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('bash', ['-c', command], {
+    const proc = spawn('/usr/bin/bash', ['-c', command], {
       cwd: cwd || WORKING_DIR,
       timeout: 120000,
+      env: {
+        ...process.env,
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+      },
     });
 
     let stdout = '';
@@ -378,6 +383,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           }
         }
+      },
+      {
+        name: 'read_channel_history',
+        description: 'Read recent message history from a Discord channel. Use this to see what was discussed in another channel or to get context from previous conversations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            channel_id: {
+              type: 'string',
+              description: 'The Discord channel ID to read from. If not provided, uses the current channel.'
+            },
+            limit: {
+              type: 'number',
+              description: 'Number of messages to fetch (default: 20, max: 100)'
+            }
+          }
+        }
+      },
+      {
+        name: 'restart_bot',
+        description: 'Restart the Discord bot to apply code changes. IMPORTANT: This will end your current session. The message you provide will be sent to Discord BEFORE the restart so the user knows what happened. Always summarize what you did and why you are restarting.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            message: {
+              type: 'string',
+              description: 'Message to send to Discord before restarting. Summarize what changes were made and why the restart is needed.'
+            },
+            delay_seconds: {
+              type: 'number',
+              description: 'Seconds to wait before restarting (default: 2). Gives time for message to be sent.'
+            }
+          },
+          required: ['message']
+        }
       }
     ]
   };
@@ -524,7 +564,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const channelList = result.channels.map(c => {
             const dir = c.workingDir ? ` → ${c.workingDir}` : '';
             const cat = c.category ? ` (${c.category})` : '';
-            return `#${c.name}${cat}${dir}`;
+            return `#${c.name} [${c.id}]${cat}${dir}`;
           }).join('\n');
 
           return {
@@ -677,6 +717,96 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const cmd = args.staged ? 'git diff --staged' : 'git diff';
         const result = await runShell(cmd, repoPath);
         return { content: [{ type: 'text', text: result.output || '(no changes)' }] };
+      }
+
+      case 'read_channel_history': {
+        const channelId = args.channel_id || CHANNEL_ID;
+        if (!channelId) {
+          return {
+            content: [{
+              type: 'text',
+              text: '❌ No channel ID provided and no current channel context available.'
+            }]
+          };
+        }
+
+        const limit = Math.min(args.limit || 20, 100);
+
+        const result = await sendDiscordCommand('read_channel_history', {
+          channelId,
+          limit,
+        });
+
+        if (result.success) {
+          const messages = result.messages.map(m => {
+            const time = new Date(m.timestamp).toLocaleString();
+            return `[${time}] ${m.author}: ${m.content}`;
+          }).join('\n\n');
+
+          return {
+            content: [{
+              type: 'text',
+              text: `=== Channel History (#${result.channelName}) ===\n\n${messages || '(no messages)'}`
+            }]
+          };
+        } else {
+          return {
+            content: [{
+              type: 'text',
+              text: `❌ Failed to read channel history: ${result.error}`
+            }]
+          };
+        }
+      }
+
+      case 'restart_bot': {
+        const channelId = CHANNEL_ID;
+        if (!channelId) {
+          return {
+            content: [{
+              type: 'text',
+              text: '❌ No channel context available to send restart message.'
+            }]
+          };
+        }
+
+        const delay = args.delay_seconds || 2;
+        const message = `🔄 **Restarting bot...**\n\n${args.message}`;
+
+        // Send message to Discord first
+        const result = await sendDiscordCommand('send_message', {
+          channelId,
+          message,
+        });
+
+        if (!result.success) {
+          return {
+            content: [{
+              type: 'text',
+              text: `❌ Failed to send restart message: ${result.error}`
+            }]
+          };
+        }
+
+        // Schedule the restart after a short delay
+        setTimeout(() => {
+          // Run npm start in the bot directory
+          const botDir = join(dirname(fileURLToPath(import.meta.url)), '..');
+          exec(`cd "${botDir}" && npm start`, (error) => {
+            if (error) {
+              console.error('Failed to restart:', error);
+            }
+          });
+          // Exit this process to trigger the restart
+          process.exit(0);
+        }, delay * 1000);
+
+        return {
+          content: [{
+            type: 'text',
+            text: `✅ Restart message sent. Bot will restart in ${delay} seconds.`
+          }]
+        };
       }
 
       default:

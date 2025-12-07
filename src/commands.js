@@ -368,7 +368,7 @@ export async function handleCommand(interaction, sessionManager, taskQueue, clie
         await interaction.editReply(`${prefix} ✅ Task started: \`${task.id}\`\nUse \`/task status id:${task.id}\` to check progress.`);
       } else {
         await interaction.deferReply();
-        const proc = spawn('bash', ['-c', command], {
+        const proc = spawn('/usr/bin/bash', ['-c', command], {
           cwd: session.workingDir,
           timeout: 60000,
         });
@@ -651,7 +651,7 @@ export async function handleCommand(interaction, sessionManager, taskQueue, clie
         });
         await interaction.editReply(`${prefix} 🚀 Deployment started as task \`${task.id}\``);
       } else {
-        const proc = spawn('bash', [fullPath], {
+        const proc = spawn('/usr/bin/bash', [fullPath], {
           cwd: session.workingDir,
           timeout: 300000, // 5 min for deploy
         });
@@ -693,7 +693,7 @@ export async function handleCommand(interaction, sessionManager, taskQueue, clie
           break;
       }
 
-      const proc = spawn('bash', ['-c', cmd], {
+      const proc = spawn('/usr/bin/bash', ['-c', cmd], {
         cwd: session.workingDir,
         timeout: 30000,
       });

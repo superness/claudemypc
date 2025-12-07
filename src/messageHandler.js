@@ -3,6 +3,7 @@ import { AttachmentBuilder } from 'discord.js';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, extname } from 'path';
 import { Logger } from './logger.js';
+import { claimMessage, releaseClaim } from './messageClaimer.js';
 import https from 'https';
 import http from 'http';
 
@@ -137,33 +138,40 @@ function splitMessage(content, maxLength = MAX_MESSAGE_LENGTH - 100) {
  * Format response for Discord (handle code blocks, length limits, etc.)
  */
 function formatResponse(response, prefix = '') {
+  // Strip any existing prefix from Claude's response (it may echo it from context)
+  // Match patterns like "[🖥️ BLD]" or "[💻 Laptop]" at the start
+  let cleanResponse = response.replace(/^\[[\p{Emoji}\s\w]+\]\s*/u, '').trim();
+  
+  // Also strip if it appears after a newline at the very start
+  cleanResponse = cleanResponse.replace(/^\n*\[[\p{Emoji}\s\w]+\]\s*/u, '').trim();
+
   // Check if response already has code blocks
-  const hasCodeBlocks = response.includes('```');
+  const hasCodeBlocks = cleanResponse.includes('```');
 
   // If response is long and looks like code, wrap it
-  if (!hasCodeBlocks && response.length > 500) {
-    const looksLikeCode = response.includes('\n') && (
-      response.includes('function') ||
-      response.includes('const ') ||
-      response.includes('import ') ||
-      response.includes('export ') ||
-      response.includes('class ') ||
-      response.includes('  ') ||
-      response.includes('->') ||
-      response.includes('=>') ||
-      response.includes('def ') ||
-      response.includes('fn ') ||
-      response.includes('pub ')
+  if (!hasCodeBlocks && cleanResponse.length > 500) {
+    const looksLikeCode = cleanResponse.includes('\n') && (
+      cleanResponse.includes('function') ||
+      cleanResponse.includes('const ') ||
+      cleanResponse.includes('import ') ||
+      cleanResponse.includes('export ') ||
+      cleanResponse.includes('class ') ||
+      cleanResponse.includes('  ') ||
+      cleanResponse.includes('->') ||
+      cleanResponse.includes('=>') ||
+      cleanResponse.includes('def ') ||
+      cleanResponse.includes('fn ') ||
+      cleanResponse.includes('pub ')
     );
 
     if (looksLikeCode) {
-      const lang = detectLanguage(response);
-      response = '```' + lang + '\n' + response + '\n```';
+      const lang = detectLanguage(cleanResponse);
+      cleanResponse = '```' + lang + '\n' + cleanResponse + '\n```';
     }
   }
 
   // Add prefix to first chunk
-  const prefixedResponse = prefix ? `${prefix}\n${response}` : response;
+  const prefixedResponse = prefix ? `${prefix}\n${cleanResponse}` : cleanResponse;
   return splitMessage(prefixedResponse);
 }
 
@@ -214,6 +222,15 @@ export async function handleMessage(message, sessionManager, taskQueue, client) 
   if (!cleanContent && message.attachments.size === 0) {
     return;
   }
+
+  // === Multi-instance coordination ===
+  // Try to claim this message before processing
+  const claimed = await claimMessage(message);
+  if (!claimed) {
+    logger.info(`Message ${message.id} claimed by another instance, skipping`);
+    return;
+  }
+  logger.info(`Claimed message ${message.id} for processing`);
 
   // Handle file uploads
   const session = sessionManager.getSession(channelId, message.channel.name);
@@ -292,6 +309,7 @@ export async function handleMessage(message, sessionManager, taskQueue, client) 
   // Track progress messages
   let lastProgressUpdate = Date.now();
   let progressMessage = null;
+  let statusLog = [];  // Array of status updates to show history
   let streamingText = '';  // Accumulate streaming text
 
   try {
@@ -314,13 +332,26 @@ export async function handleMessage(message, sessionManager, taskQueue, client) 
                        progressText === 'Running tool...';
 
       if (isStatus) {
-        // Status messages - show immediately
+        // Status messages - append to log
         streamingText = '';  // Reset streaming text on status change
+        
+        // Add to status log (keep last 8 entries to avoid message limit)
+        statusLog.push(progressText);
+        if (statusLog.length > 8) {
+          statusLog.shift();
+        }
+        
+        // Format the status log with timestamps relative to start
+        const logDisplay = statusLog.map((s, i) => {
+          const icon = i === statusLog.length - 1 ? '⏳' : '✓';
+          return `${icon} ${s}`;
+        }).join('\n');
+        
         try {
           if (progressMessage) {
-            await progressMessage.edit(`${prefix} ⏳ ${progressText}`);
+            await progressMessage.edit(`${prefix}\n${logDisplay}`);
           } else {
-            progressMessage = await message.channel.send(`${prefix} ⏳ ${progressText}`);
+            progressMessage = await message.channel.send(`${prefix}\n${logDisplay}`);
           }
         } catch (e) {
           logger.error('Failed to update progress:', e.message);
@@ -338,11 +369,21 @@ export async function handleMessage(message, sessionManager, taskQueue, client) 
           ? '...' + streamingText.slice(-300)
           : streamingText;
 
+        // Format with status log + current streaming text
+        const logDisplay = statusLog.map((s, i) => {
+          const icon = i === statusLog.length - 1 ? '💬' : '✓';
+          return `${icon} ${s}`;
+        }).join('\n');
+        
+        const fullDisplay = logDisplay 
+          ? `${prefix}\n${logDisplay}\n\n💬 ${displayText}`
+          : `${prefix} 💬 ${displayText}`;
+
         try {
           if (progressMessage) {
-            await progressMessage.edit(`${prefix} 💬 ${displayText}`);
+            await progressMessage.edit(fullDisplay);
           } else {
-            progressMessage = await message.channel.send(`${prefix} 💬 ${displayText}`);
+            progressMessage = await message.channel.send(fullDisplay);
           }
         } catch (e) {
           logger.error('Failed to update progress:', e.message);
@@ -378,6 +419,8 @@ export async function handleMessage(message, sessionManager, taskQueue, client) 
     await message.reply(`${prefix} ❌ Error: ${err.message}`);
   } finally {
     clearInterval(typingInterval);
+    // Release the claim (remove lock reaction)
+    await releaseClaim(message);
   }
 }
 
