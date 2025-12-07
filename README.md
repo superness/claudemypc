@@ -19,7 +19,22 @@ A Discord bot that interfaces with your local Claude Code CLI, letting you inter
 - **Multi-PC Support**: Run on multiple computers, each with unique identity
 - **Background Tasks**: Run long-running commands with completion notifications
 
-## Quick Start
+## Quick Start (Using Claude Code CLI)
+
+If you already have Claude Code CLI, just run this prompt:
+
+```
+Clone https://github.com/superness/claudemypc.git and help me set it up. Install dependencies, guide me through creating a Discord bot and getting the token, then configure .env with my settings.
+```
+
+Claude will walk you through:
+1. Cloning the repo and installing dependencies
+2. Creating a Discord bot (with links to the Developer Portal)
+3. Getting your Discord IDs
+4. Configuring `.env`
+5. Starting the bot
+
+## Manual Quick Start
 
 ```bash
 # 1. Clone the repo
