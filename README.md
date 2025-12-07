@@ -1,84 +1,115 @@
-# DiscordMyPC
+# ClaudeMyPC
 
-A Discord bot that acts as a bridge to Claude Code CLI, allowing you to control your local machine through Discord. Supports multiple PCs running the same bot with distinct identities.
+A Discord bot that interfaces with your local Claude Code CLI, letting you interact with Claude on your PC through Discord. Features channel-based project context, persistent knowledge per channel, and real-time streaming output.
+
+## Prerequisites
+
+- **Claude Code CLI** installed and working (`claude --version`)
+- **Node.js** 18+
+- A Discord bot token
 
 ## Features
 
-- **Channel-based Context**: Each Discord channel maintains its own Claude Code session with isolated working directories
-- **Multi-PC Support**: Run the bot on multiple computers, each with a unique identity and independently addressable
-- **Auto Project Detection**: Channel names automatically map to project directories
-- **Dynamic Channel Creation**: Create new channels on-the-fly for different projects
-- **Background Tasks**: Run long-running commands in the background with completion notifications
-- **Task Queue**: Manage multiple background tasks with status tracking
-- **File Operations**: Download files from your PC through Discord
-- **Git Integration**: Quick git status, pull, and log commands
-- **Deployment Support**: Run deployment scripts directly from Discord
-- **Self-Updating**: Update the bot code through Discord commands
-- **Shell Access**: Run arbitrary shell commands through the bot
-- **Message Chunking**: Handles long responses by splitting them appropriately
-- **Code Formatting**: Automatic syntax highlighting for code responses
-- **Logging**: Comprehensive file-based logging for debugging
+- **Channel-based Context**: Each Discord channel maps to a working directory - Claude knows the project context
+- **Persistent Knowledge**: Claude saves findings, decisions, and notes per channel that survive restarts
+- **Real-time Streaming**: See what Claude is thinking and doing as it works (tool calls, text generation)
+- **MCP Tools**: Claude can run commands, read/write files, search code, create channels, and more
+- **Dynamic Channel Creation**: Claude can create new channels for projects when you ask
+- **Thread Support**: Create threads for focused tasks with separate context
+- **Multi-PC Support**: Run on multiple computers, each with unique identity
+- **Background Tasks**: Run long-running commands with completion notifications
+
+## Quick Start
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/superness/claudemypc.git
+cd claudemypc
+
+# 2. Install dependencies
+npm install
+cd mcp-server && npm install && cd ..
+
+# 3. Copy and edit config
+cp .env.example .env
+# Edit .env with your Discord token and settings (see below)
+
+# 4. Run the bot
+npm start
+```
 
 ## Setup
 
 ### 1. Create a Discord Bot
 
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application" and give it a name
-3. Go to "Bot" section and click "Add Bot"
-4. Enable these Privileged Gateway Intents:
-   - MESSAGE CONTENT INTENT
-   - SERVER MEMBERS INTENT (optional)
-5. Copy the bot token
+2. Click **"New Application"** → give it a name (e.g., "ClaudeMyPC")
+3. Go to **"Bot"** in the left sidebar
+4. Click **"Reset Token"** and copy the token (you'll need this for `.env`)
+5. Scroll down to **"Privileged Gateway Intents"** and enable:
+   - ✅ **MESSAGE CONTENT INTENT** (required - lets bot read messages)
+   - ✅ **SERVER MEMBERS INTENT** (optional)
 
 ### 2. Invite Bot to Your Server
 
-1. Go to "OAuth2" -> "URL Generator"
-2. Select scopes: `bot`, `applications.commands`
-3. Select permissions:
-   - Send Messages
-   - Manage Channels
-   - Read Message History
-   - Use Slash Commands
-   - Embed Links
-   - Attach Files
-   - Manage Nicknames (for multi-PC identification)
-4. Copy the generated URL and open it to invite the bot
+1. In Discord Developer Portal, go to **"OAuth2" → "URL Generator"**
+2. Under **Scopes**, check:
+   - ✅ `bot`
+   - ✅ `applications.commands`
+3. Under **Bot Permissions**, check:
+   - ✅ Send Messages
+   - ✅ Manage Channels
+   - ✅ Manage Threads
+   - ✅ Read Message History
+   - ✅ Embed Links
+   - ✅ Attach Files
+4. Copy the generated URL at the bottom and open it in your browser
+5. Select your server and authorize
 
-### 3. Configure the Bot
+### 3. Get Your IDs
+
+You'll need your Discord User ID and Server ID:
+
+1. In Discord, go to **Settings → Advanced → Enable Developer Mode**
+2. Right-click your server name → **"Copy Server ID"** (this is `GUILD_ID`)
+3. Right-click your username → **"Copy User ID"** (this is `OWNER_ID`)
+
+### 4. Configure the Bot
+
+Edit `.env` with your values:
 
 ```bash
-# Clone/navigate to the bot directory
-cd /mnt/c/github/discordmypc
+# Required
+DISCORD_TOKEN=your_bot_token_here
+GUILD_ID=your_server_id_here
+WORK_DIR=/path/to/your/projects
 
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your values
+# Optional (for multi-PC setups)
+INSTANCE_NAME=MyPC
+INSTANCE_EMOJI=🖥️
 ```
 
-Required `.env` values:
-- `DISCORD_TOKEN`: Your bot token from Discord Developer Portal
-- `OWNER_ID`: Your Discord user ID
-- `GUILD_ID`: Your server ID (for instant command registration)
-- `WORK_DIR`: Base directory for projects (e.g., `/mnt/c/github`)
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DISCORD_TOKEN` | Bot token from Discord Developer Portal | `MTQ0NzMyMjY4...` |
+| `GUILD_ID` | Your Discord server ID | `1447321563350437890` |
+| `WORK_DIR` | Base directory for projects | `/mnt/c/github` or `C:\github` |
+| `INSTANCE_NAME` | Name shown in Discord responses | `Desktop`, `Laptop` |
+| `INSTANCE_EMOJI` | Emoji prefix for responses | `🖥️`, `💻` |
 
-Multi-PC Configuration:
-- `INSTANCE_ID`: Unique identifier for this PC (defaults to hostname)
-- `INSTANCE_NAME`: Human-friendly name shown in Discord
-- `INSTANCE_EMOJI`: Emoji to identify this instance (default: 🖥️)
-
-### 4. Install and Run
+### 5. Run
 
 ```bash
-npm install
 npm start
 ```
 
-For development with auto-reload:
-```bash
-npm run dev
+You should see:
 ```
+[INFO] [bot] Logged in as ClaudeMyPC#1234
+[INFO] [bot] Bot is ready!
+```
+
+Now just talk to the bot in any channel!
 
 ## Usage
 
@@ -187,14 +218,23 @@ discordmypc/
 └── package.json
 ```
 
+## How It Works
+
+The bot runs Claude Code CLI with an MCP server that provides tools for:
+- **File/Shell**: `run_command`, `read_file`, `write_file`, `list_directory`, `search_files`, `search_content`
+- **Git**: `git_status`, `git_diff`
+- **Discord**: `create_channel`, `create_thread`, `list_channels`
+- **Context**: `update_context`, `get_context` (persistent knowledge per channel)
+
+Claude uses `--dangerously-skip-permissions` so it can execute tools without prompts. The MCP server communicates with the Discord bot via file-based IPC to create channels/threads.
+
 ## Notes
 
-- Claude Code CLI must be installed and accessible
-- The bot uses `claude --print` for single-shot commands
+- Claude Code CLI must be installed and accessible (`claude --version`)
+- Uses `claude --print --verbose --output-format stream-json --include-partial-messages` for streaming
 - Sessions timeout after 10 minutes of processing (configurable)
-- Background tasks are persisted and survive bot restarts
+- Persistent context is stored in `context/` directory as JSON files
 - Logs are stored in daily files under `logs/`
-- Each PC instance maintains its own task queue
 
 ## Troubleshooting
 
