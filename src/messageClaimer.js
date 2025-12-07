@@ -90,11 +90,12 @@ function doesInstanceOwnCategory(categoryName) {
 function getMachineFromContent(content) {
   const lower = content.toLowerCase();
   
+  // Note: "server" removed - too generic and conflicts with channel names like "minecraft-server"
   const patterns = [
-    /\bon\s+(my\s+)?(laptop|desktop|bld|server|pc)\b/i,
-    /\bfrom\s+(my\s+)?(laptop|desktop|bld|server|pc)\b/i,
-    /\b(laptop|desktop|bld|server)[\s:,]/i,
-    /^@?(laptop|desktop|bld|server)\b/i,
+    /\bon\s+(my\s+)?(laptop|desktop|bld|pc)\b/i,
+    /\bfrom\s+(my\s+)?(laptop|desktop|bld|pc)\b/i,
+    /\b(laptop|desktop|bld)[\s:,]/i,
+    /^@?(laptop|desktop|bld)\b/i,
   ];
   
   for (const pattern of patterns) {
