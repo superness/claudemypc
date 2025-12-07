@@ -177,9 +177,16 @@ export class ClaudeSession extends EventEmitter {
     const cmd = `cat "${tempFile}" | ${config.claude.cliPath} --print --verbose --output-format stream-json --include-partial-messages --mcp-config "${MCP_CONFIG_PATH}" --dangerously-skip-permissions --allowedTools 'mcp__discordmypc__*'`;
 
     // Use detected bash path
-    logger.info(`Using bash at: ${BASH_PATH}`);
+    // Verify working directory exists, fall back to a safe default
+    let cwd = this.workingDir;
+    if (!existsSync(cwd)) {
+      logger.warn(`Working directory does not exist: ${cwd}, falling back to ${config.claude.workDir}`);
+      cwd = config.claude.workDir;
+    }
+
+    logger.info(`Using bash at: ${BASH_PATH}, cwd: ${cwd}`);
     this.process = spawn(BASH_PATH, ['-c', cmd], {
-      cwd: this.workingDir,
+      cwd: cwd,
       env: {
         ...process.env,
         TERM: 'dumb',

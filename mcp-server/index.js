@@ -529,6 +529,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const channelName = args.name.toLowerCase().replace(/\s+/g, '-');
         const workDir = args.working_dir || join(WORKING_DIR, channelName);
 
+        // Create the working directory if it doesn't exist
+        if (!existsSync(workDir)) {
+          try {
+            mkdirSync(workDir, { recursive: true });
+            console.error(`Created working directory: ${workDir}`);
+          } catch (err) {
+            console.error(`Failed to create working directory: ${err.message}`);
+          }
+        }
+
         const result = await sendDiscordCommand('create_channel', {
           name: channelName,
           category: args.category,
