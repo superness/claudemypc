@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
-import { writeFileSync, unlinkSync } from 'fs';
+import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -14,6 +14,18 @@ const __dirname = dirname(__filename);
 
 // Path to MCP config
 const MCP_CONFIG_PATH = join(__dirname, 'config', 'mcp.json');
+
+// Find bash - try multiple locations for cross-platform compatibility
+function findBash() {
+  const paths = ['/usr/bin/bash', '/bin/bash', 'bash'];
+  for (const p of paths) {
+    if (p === 'bash' || existsSync(p)) {
+      return p;
+    }
+  }
+  return 'bash'; // fallback to PATH lookup
+}
+const BASH_PATH = findBash();
 
 // System prompt explaining capabilities
 const SYSTEM_PROMPT = `You are Claude, an AI assistant running on a local PC via Discord.
@@ -164,8 +176,9 @@ export class ClaudeSession extends EventEmitter {
     // Use stream-json for real-time streaming output (requires --verbose with --print, --include-partial-messages for actual text streaming)
     const cmd = `cat "${tempFile}" | ${config.claude.cliPath} --print --verbose --output-format stream-json --include-partial-messages --mcp-config "${MCP_CONFIG_PATH}" --dangerously-skip-permissions --allowedTools 'mcp__discordmypc__*'`;
 
-    // Use absolute path to bash to avoid PATH issues
-    this.process = spawn('/usr/bin/bash', ['-c', cmd], {
+    // Use detected bash path
+    logger.info(`Using bash at: ${BASH_PATH}`);
+    this.process = spawn(BASH_PATH, ['-c', cmd], {
       cwd: this.workingDir,
       env: {
         ...process.env,

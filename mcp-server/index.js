@@ -16,6 +16,18 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSy
 import { join, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
+// Find bash - try multiple locations, including WSL
+function findBash() {
+  const paths = ['/usr/bin/bash', '/bin/bash'];
+  for (const p of paths) {
+    if (existsSync(p)) {
+      return p;
+    }
+  }
+  return 'bash'; // fallback to PATH lookup
+}
+const BASH_PATH = findBash();
+
 // Get config from environment
 const WORKING_DIR = process.env.WORKING_DIR || '/mnt/c/github';
 const GUILD_ID = process.env.GUILD_ID || '';
@@ -108,7 +120,8 @@ async function sendDiscordCommand(command, params) {
 // Execute shell command
 function runShell(command, cwd) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('/usr/bin/bash', ['-c', command], {
+    console.error(`Running command with bash at: ${BASH_PATH}`);
+    const proc = spawn(BASH_PATH, ['-c', command], {
       cwd: cwd || WORKING_DIR,
       timeout: 120000,
       env: {
