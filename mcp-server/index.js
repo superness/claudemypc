@@ -418,6 +418,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ['message']
         }
+      },
+      {
+        name: 'send_to_channel',
+        description: 'Send a message to a specific Discord channel. Use this to redirect conversations to the appropriate channel or to continue work in a newly created channel/thread.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            channel_id: {
+              type: 'string',
+              description: 'The Discord channel or thread ID to send the message to'
+            },
+            message: {
+              type: 'string',
+              description: 'The message to send'
+            }
+          },
+          required: ['channel_id', 'message']
+        }
       }
     ]
   };
@@ -807,6 +825,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: `✅ Restart message sent. Bot will restart in ${delay} seconds.`
           }]
         };
+      }
+
+      case 'send_to_channel': {
+        if (!args.channel_id) {
+          return {
+            content: [{
+              type: 'text',
+              text: '❌ channel_id is required'
+            }]
+          };
+        }
+
+        const result = await sendDiscordCommand('send_message', {
+          channelId: args.channel_id,
+          message: args.message,
+        });
+
+        if (result.success) {
+          return {
+            content: [{
+              type: 'text',
+              text: `✅ Message sent to channel ${args.channel_id}`
+            }]
+          };
+        } else {
+          return {
+            content: [{
+              type: 'text',
+              text: `❌ Failed to send message: ${result.error}`
+            }]
+          };
+        }
       }
 
       default:

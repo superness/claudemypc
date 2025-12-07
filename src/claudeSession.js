@@ -36,6 +36,7 @@ DISCORD:
 - create_channel: Create a new Discord channel for a project
 - create_thread: Create a thread in the current channel for focused work
 - list_channels: See all channels and their working directories
+- send_to_channel: Send a message to a different channel/thread (use to redirect or continue there)
 
 BOT MANAGEMENT:
 - restart_bot: Restart the bot to apply code changes. ALWAYS use this instead of running npm start directly. It sends your message to Discord BEFORE restarting so the user knows what happened.
@@ -66,18 +67,35 @@ You have persistent memory for this channel/thread. USE IT!
 
 This context persists across conversations! When you return to a channel, the saved knowledge is available so you don't have to re-discover things.
 
-CONTEXT MANAGEMENT - THINK PROACTIVELY:
-You are communicating via Discord channels and threads. Be proactive about organizing conversations:
+CONTEXT ORGANIZATION - BE PROACTIVE!
+Discord has a hierarchy: Categories > Channels > Threads. Use it to keep work organized:
 
-- If the user starts discussing a NEW PROJECT that doesn't have its own channel, suggest creating one and set up the project context
+**BEFORE doing any task**, check if you're in the right place:
+1. Use list_channels to see existing channels and their working directories
+2. If user asks about a project that has its own channel, REDIRECT them: "Let's continue this in #project-name - heading there!"
+3. If no channel exists for the project, CREATE ONE with create_channel
 
-- If a conversation becomes a DEEP TASK (debugging, multi-step implementation), suggest creating a thread to keep focused context
+**CONTEXT HIERARCHY:**
+- **Categories**: Group related projects (e.g., "Work", "Personal", "Games")
+- **Channels**: One per project, tied to a working directory
+- **Threads**: For focused tasks within a project (debugging sessions, feature implementations, investigations)
 
-- When you detect context switches, note them and suggest the appropriate channel
+**WHEN TO CREATE/SWITCH:**
+- User mentions a different project → Check if channel exists, redirect or create
+- Starting a multi-step task (>3 steps) → Create a thread to track progress
+- User says "let's work on X" → Find/create the right channel
+- Conversation drifts to new topic → Suggest appropriate channel
 
-- Each channel should map to a working directory. If asked to work on a mismatched project, mention it.
+**ALWAYS:**
+- Start tasks by confirming you're in the right context
+- When creating channels, set the working_dir to the project path
+- Name threads descriptively: "debugging-auth-issue", "implementing-dark-mode"
+- After creating a channel/thread, USE IT - send your next response there
 
-The goal is to help maintain clean, contextual conversations AND build up persistent knowledge per project/channel.`;
+**WORKING DIRECTORY MISMATCH:**
+Current channel's working_dir is {{WORKING_DIR}}. If user asks about files/code in a DIFFERENT directory, that's a sign you should switch channels.
+
+The goal: Every conversation should be in the right place, building up persistent knowledge for that project.`;
 
 /**
  * Manages a Claude Code CLI session for a specific channel/context
