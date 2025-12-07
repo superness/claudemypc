@@ -1,0 +1,10 @@
+{
+  "name": "discordmypc-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server providing Discord and system tools for Claude",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  }
+}

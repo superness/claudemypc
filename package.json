@@ -1,0 +1,24 @@
+{
+  "name": "discordmypc",
+  "version": "1.0.0",
+  "description": "Discord bot interface for Claude Code CLI - control your PC through Discord",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "discord",
+    "claude",
+    "cli",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1"
+  }
+}

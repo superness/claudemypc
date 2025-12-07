@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "discordmypc": {
+      "command": "node",
+      "args": ["/mnt/c/github/discordmypc/mcp-server/index.js"],
+      "env": {
+        "WORKING_DIR": "/mnt/c/github"
+      }
+    }
+  }
+}
