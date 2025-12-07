@@ -117,35 +117,66 @@ async function sendDiscordCommand(command, params) {
   throw new Error('Discord command timeout - is the bot running?');
 }
 
-// Execute shell command
-function runShell(command, cwd) {
+// Execute shell command with proper timeout
+function runShell(command, cwd, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     console.error(`Running command with bash at: ${BASH_PATH}`);
+
+    // Check if this looks like a background command
+    const isBackground = command.includes('&') && (command.includes('nohup') || command.includes('disown'));
+
     const proc = spawn(BASH_PATH, ['-c', command], {
       cwd: cwd || WORKING_DIR,
-      timeout: 120000,
       env: {
         ...process.env,
         PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
       },
+      detached: isBackground,  // Detach background processes
+      stdio: isBackground ? 'ignore' : 'pipe',
     });
+
+    // For background commands, unref and return immediately
+    if (isBackground) {
+      proc.unref();
+      resolve({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        output: 'Command started in background'
+      });
+      return;
+    }
 
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+
+    // Set up timeout
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill('SIGTERM');
+      setTimeout(() => proc.kill('SIGKILL'), 5000);  // Force kill after 5s
+    }, timeoutMs);
 
     proc.stdout.on('data', d => stdout += d.toString());
     proc.stderr.on('data', d => stderr += d.toString());
 
     proc.on('close', code => {
+      clearTimeout(timer);
       resolve({
-        exitCode: code,
+        exitCode: timedOut ? -1 : code,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
-        output: (stdout + stderr).trim()
+        output: timedOut
+          ? `Command timed out after ${timeoutMs/1000}s\n${(stdout + stderr).trim()}`
+          : (stdout + stderr).trim()
       });
     });
 
-    proc.on('error', reject);
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -168,7 +199,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'run_command',
-        description: 'Execute a shell command in the working directory. Use this to run builds, tests, git commands, or any CLI operation.',
+        description: 'Execute a shell command and wait for it to complete. Use for quick commands (builds, tests, git). Has 30s timeout. For long-running processes like servers, use run_background instead.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -179,6 +210,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             working_dir: {
               type: 'string',
               description: 'Optional working directory (defaults to current project dir)'
+            }
+          },
+          required: ['command']
+        }
+      },
+      {
+        name: 'run_background',
+        description: 'Start a long-running process in the background (servers, watchers, etc). Returns immediately. Process survives bot restarts. Use this for Minecraft servers, web servers, file watchers, etc.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            command: {
+              type: 'string',
+              description: 'The command to run in background'
+            },
+            working_dir: {
+              type: 'string',
+              description: 'Optional working directory'
+            },
+            log_file: {
+              type: 'string',
+              description: 'Optional log file path (defaults to /tmp/<name>.log)'
+            },
+            name: {
+              type: 'string',
+              description: 'Name for this background process (for identification)'
             }
           },
           required: ['command']
@@ -469,6 +526,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: `Exit code: ${result.exitCode}\n\n${result.output || '(no output)'}`
           }]
         };
+      }
+
+      case 'run_background': {
+        const cwd = args.working_dir || WORKING_DIR;
+        const processName = args.name || `bg-${Date.now()}`;
+        const logFile = args.log_file || `/tmp/${processName}.log`;
+
+        // Wrap command to redirect output to log file
+        const wrappedCommand = `nohup ${args.command} > "${logFile}" 2>&1 &`;
+
+        try {
+          const proc = spawn(BASH_PATH, ['-c', wrappedCommand], {
+            cwd: cwd,
+            env: {
+              ...process.env,
+              PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+            },
+            detached: true,
+            stdio: 'ignore',
+          });
+
+          // Unref to allow parent to exit independently
+          proc.unref();
+
+          // Give it a moment to start
+          await new Promise(r => setTimeout(r, 500));
+
+          // Try to get the PID of the background process
+          const pidResult = await runShell(`pgrep -f "${args.command.split(' ')[0]}" | tail -1`, cwd, 5000);
+          const pid = pidResult.stdout.trim();
+
+          return {
+            content: [{
+              type: 'text',
+              text: `✅ Background process started\n\nName: ${processName}\nCommand: ${args.command}\nLog file: ${logFile}\nPID: ${pid || '(spawned)'}\n\nProcess is running independently and will survive bot restarts.\nCheck logs with: tail -f ${logFile}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: 'text',
+              text: `❌ Failed to start background process: ${error.message}`
+            }]
+          };
+        }
       }
 
       case 'read_file': {
